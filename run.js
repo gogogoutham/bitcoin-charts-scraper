@@ -85,41 +85,46 @@ var saveTradesFromApi = function(symbol, startTime, csv, callback) {
 
 // Function to handle parsing and loading in sequence; this will batch data into blocks
 var parseAndLoadTrades = function(symbol, csv, callback) {
-    btcCharts.parseTrades(
-        csv,
-        function (parseErr, data) { // Callback (method to batch trades and load into sql)
-            if( parseErr ) {
-                console.log("Error parsing trades for symbol %s.", symbol);
-                callback(parseErr);
-            }
-            debug("Finished parsing trades for symbol %s.", symbol);
-
-            // Batch data according to rules specified
-            var batchCount = 1;
-            while( data.length > 0 ) {
-                var batch = data.splice(0, insertRowLengthCap);
-                var sqlErr = pgloader.run(dbUrl, 
-                    tradeTable,
-                    ['exchange', 'currency', 'time', 'price', 'volume', 'cnt'], 
-                    ['exchange', 'currency', 'time', 'price', 'volume'], 
-                    batch, 
-                    pgloader.SQL_REPLACE);
-                if( sqlErr instanceof Error ) {
-                    console.log("Error loading batch %s of %s trades into database.", batchCount, batchCount + Math.ceil(data.length/insertRowLengthCap));
-                    callback(sqlErr);
+    if( csv.trim() === "" ) {
+        debug("Empty data set received for symbol %s. Skipping parsing and DB load.", symbol);
+        callback(null, true);
+    } else {
+        btcCharts.parseTrades(
+            csv,
+            function (parseErr, data) { // Callback (method to batch trades and load into sql)
+                if( parseErr ) {
+                    console.log("Error parsing trades for symbol %s.", symbol);
+                    callback(parseErr);
                 }
-                debug("Finished loading batch %s of %s of trades to DB for symbol %s.", batchCount, batchCount + Math.ceil(data.length/insertRowLengthCap), symbol);
-                batchCount += 1;
-            }
-            debug("Finished loadiing trades to DB for symbol %s.", symbol);
-            callback(null, true);
-        },
-        function(timeRaw) { // time formatter
-            return btcCharts.parseTradeTime(timeRaw).toISOString();
-        }, 
-        btcCharts.parseSymbol(symbol), // pad data with the exchange+currency = symbol
-        'cnt' // group the data and store the count of items in a group in 'grp'
-    );
+                debug("Finished parsing trades for symbol %s.", symbol);
+
+                // Batch data according to rules specified
+                var batchCount = 1;
+                while( data.length > 0 ) {
+                    var batch = data.splice(0, insertRowLengthCap);
+                    var sqlErr = pgloader.run(dbUrl, 
+                        tradeTable,
+                        ['exchange', 'currency', 'time', 'price', 'volume', 'cnt'], 
+                        ['exchange', 'currency', 'time', 'price', 'volume'], 
+                        batch, 
+                        pgloader.SQL_REPLACE);
+                    if( sqlErr instanceof Error ) {
+                        console.log("Error loading batch %s of %s trades into database.", batchCount, batchCount + Math.ceil(data.length/insertRowLengthCap));
+                        callback(sqlErr);
+                    }
+                    debug("Finished loading batch %s of %s of trades to DB for symbol %s.", batchCount, batchCount + Math.ceil(data.length/insertRowLengthCap), symbol);
+                    batchCount += 1;
+                }
+                debug("Finished loadiing trades to DB for symbol %s.", symbol);
+                callback(null, true);
+            },
+            function(timeRaw) { // time formatter
+                return btcCharts.parseTradeTime(timeRaw).toISOString();
+            }, 
+            btcCharts.parseSymbol(symbol), // pad data with the exchange+currency = symbol
+            'cnt' // group the data and store the count of items in a group in 'grp'
+        );
+    }
 };
 
 // Function to handle end-to-end scraping of trade data via API request (request, file storage, parsing, db storage)
@@ -217,7 +222,7 @@ var dispatchTradeScrapers = function(manifestData, callback) {
             });
 
             // Execute scraping tasks in parallel and asynchronously
-            async.parallel(scrapingTasks, function(err, result) {
+            async.series(scrapingTasks, function(err, result) {
                 if( err ) {
                     console.log("Error scraping trades after processing manifest.");
                 }
