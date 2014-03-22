@@ -153,3 +153,26 @@ exports.testTradeFormatterEmpty = function(test) {
         test.done();
     });
 };
+
+exports.testTradeFormatterSmall = function(test) {
+    test.expect(1);
+    var sm = fs.createReadStream(__dirname + "/read-files/bcmBMGAU.csv.gz")
+        .pipe(zlib.createGunzip())
+        .pipe(parser.createTradeBatcher(100)) 
+        .pipe(parser.createTradeFormatter({
+            timeFormatter : parser.formatTradeTime,
+            rowPadding : parser.splitSymbol("bcmBMGAU"),
+            countInGroupField : 'cnt'
+        })),
+        lineCount = 0;
+
+    sm.on("data", function(chunk) {
+        lineCount += chunk.length;
+        // console.log("Received the following chunk of length %s: %o", chunk.length, chunk);
+    });
+
+    sm.on("end", function() {
+        test.equal(lineCount, 1, "Got more than 1 chunk.");
+        test.done();
+    });
+}; 
