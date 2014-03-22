@@ -235,12 +235,13 @@ var scrape = function(callback) {
 //     callback(null, true);
 // };
 
-// // Trade scraping test - uncomment section to limit dispatch of trade scrapers to a small subset of trades
+// Trade scraping test - uncomment section to limit dispatch of trade scrapers to a small subset of trades
 // batchSize = 1000;
 // scrape = function(callback) {
 //     async.series([
 //         async.apply(scrapeTrades, { source : "api", symbol : 'bitstampUSD', start : Math.floor((new Date()).getTime()/1000) - 86400 }),
-//         async.apply(scrapeTrades, { source : "manifest", link : "localbtcPLN.csv.gz"})
+//         async.apply(scrapeTrades, { source : "manifest", link : "localbtcPLN.csv.gz"}),
+//         async.apply(scrapeTrades, { source : "manifest", link : "bcmBMAUD.csv.gz"})
 //     ], function(err, result) {
 //         if( err ) {
 //             console.log("Problem encountered in trade scraping tasks.");

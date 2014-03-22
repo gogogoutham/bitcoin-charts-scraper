@@ -1,5 +1,6 @@
 var parser = require(__dirname + "/../lib/parser.js"),
-    fs = require("fs");
+    fs = require("fs"),
+    zlib = require("zlib");
 
 exports.testFormatManifest = function(test) {
     test.expect(5);
@@ -127,4 +128,28 @@ exports.testTradeFormatter = function(test) {
             });
         });
     })();
+};
+
+
+exports.testTradeFormatterEmpty = function(test) {
+    test.expect(1);
+    var sm = fs.createReadStream(__dirname + "/read-files/bcmBMAUD.csv.gz")
+        .pipe(zlib.createGunzip())
+        .pipe(parser.createTradeBatcher(100))
+        .pipe(parser.createTradeFormatter({
+            timeFormatter : parser.formatTradeTime,
+            rowPadding : parser.splitSymbol("bcmBMAUD"),
+            countInGroupField : 'cnt'
+        })),
+        chunkCount = 0;
+
+    sm.on("data", function(chunk) {
+        chunkCount += 1;
+        // console.log("Received the following chunk of length %s: %o", chunk.length, chunk);
+    });
+
+    sm.on("end", function() {
+        test.equal(chunkCount, 0, "Got more than 0 chunks.");
+        test.done();
+    });
 };
