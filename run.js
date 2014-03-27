@@ -48,12 +48,15 @@ var scrapeTrades = function (options, callback) {
             symbol : options.symbol,
             start : options.start
         }, null);
-    } else {
+    } else if ( options.source == "manifest") {
         symbol = options.link.replace(".csv.gz","");
         savePath = dataDir + "/" + "trades_for_" + symbol.toLowerCase() + "_" +
             "historical" + "_on_" + runTimeUnix + ".csv";
         csvStream = requestor.createManifestFileStream(options.link, null)
             .pipe(zlib.createGunzip());
+    } else { // CSV file stored on disk
+        symbol = options.symbol;
+        csvStream = fs.createReadStream(options.path);
     }
 
     // Setup setup common parse and DB options
@@ -70,26 +73,31 @@ var scrapeTrades = function (options, callback) {
         "sqlMode" : pgLoader.SQL_REPLACE
     };
 
-    async.parallel([
-        // Pipe to parse and database load, w/ an event handler on success
-        function(cb) {
-            var dbsm = csvStream.pipe(parser.createTradeBatcher(batchSize))
-                .pipe(parser.createTradeFormatter(parseOptions))
-                .pipe(pgLoader.createStream(dbLoadOptions));
-            dbsm.on("finish", function() {
-                debug("Successfully saved the following trade information to the database: %s", JSON.stringify(options));
-                cb(null, true);
-            });
-        },
-        // Pipe to file save w/ an event handler on success
-        function(cb) {
+    var tasks = [];
+
+    // Pipe to parse and database load, w/ an event handler on success
+    tasks.push(function(cb) {
+        var dbsm = csvStream.pipe(parser.createTradeBatcher(batchSize))
+            .pipe(parser.createTradeFormatter(parseOptions))
+            .pipe(pgLoader.createStream(dbLoadOptions));
+        dbsm.on("finish", function() {
+            debug("Successfully saved the following trade information to the database: %s", JSON.stringify(options));
+            cb(null, true);
+        });
+    });
+
+    // Pipe to file save w/ an event handler on success (only if we're not already reading from a file)
+    if( options.source != "csvfile" ) {
+        tasks.push(function(cb) {
             var fsm = csvStream.pipe(fs.createWriteStream(savePath));
             fsm.on("finish", function() {
                 debug("Successfully saved the following trade information to file: %s", JSON.stringify(options));
                 cb(null, true);
             });
-        }
-    ], function(err, result) {
+        });
+    }
+
+    async.parallel(tasks, function(err, result) {
         if( err ) {
             console.log("Error encountered while scraping %s", JSON.stringify(options));
             callback(err);
@@ -241,7 +249,8 @@ var scrape = function(callback) {
 //     async.series([
 //         async.apply(scrapeTrades, { source : "api", symbol : 'bitstampUSD', start : Math.floor((new Date()).getTime()/1000) - 86400 }),
 //         async.apply(scrapeTrades, { source : "manifest", link : "localbtcPLN.csv.gz"}),
-//         async.apply(scrapeTrades, { source : "manifest", link : "bcmBMAUD.csv.gz"})
+//         async.apply(scrapeTrades, { source : "manifest", link : "bcmBMAUD.csv.gz"}),
+//         async.apply(scrapeTrades, { source : "csvfile", symbol : "localbtcPLN", path : "test/read-files/localbtcPLN.csv"})
 //     ], function(err, result) {
 //         if( err ) {
 //             console.log("Problem encountered in trade scraping tasks.");
