@@ -53,7 +53,7 @@ var generatePgLoaderOptions = function(tableName, sqlMode) {
 };
 
 // Disconnects upon completion of all tests
-var numTests = 2,
+var numTests = 3,
     disconnectCount = 0,
     disconnect = function() {
         disconnectCount += 1;
@@ -166,6 +166,73 @@ exports.testStream = function(test) {
                     disconnect();
                 });
             });
+        });
+    });
+};
+
+// Does not depend on parser, but it should be, ultimately, correct
+exports.testTradeStream = function(test) {
+    test.expect(15);
+    pg.connect(dbUrl, function(err, client, done) {
+        test.ifError(err);
+        //console.log("Error object is as follows: %o", err);
+
+        var testTable = "test_" + ("0000000000" + Math.floor(10000000000*Math.random())).slice(-10); 
+
+        //console.log("Client object is as follows: %o", client);
+
+        async.series([
+            async.apply(client.query.bind(client), "CREATE TABLE " + testTable + " " +
+                "(exchange VARCHAR(50), currency CHAR(3), " +
+                "time TIMESTAMP WITH TIME ZONE, price DECIMAL, volume DECIMAL, cnt INTEGER, " +
+                "PRIMARY KEY(exchange, currency, time, price, volume))"),
+            async.apply(client.query.bind(client), "INSERT INTO " + testTable + " " +
+                "VALUES ('localbtc', 'PLN', '2013-07-16T00:34:50+00' ,'349.000000000000', '0.110000000000', 5)")
+        ], function(createErr, result) {
+            test.ifError(createErr);
+
+            var loadOptions = {
+                dbUrl : dbUrl,
+                symbol : 'localbtcPLN',
+                tableName : testTable,
+                fileFields : ['time', 'price', 'volume'],
+                symbolFields : ['exchange', 'currency'],
+                countField : ['cnt']
+            };
+
+            pgLoader.createTradeStream(loadOptions, function(err, pgcfStream) {
+                    //console.log("Error object is as follows: %o", createErr);
+                    test.ifError(err);
+                    fs.createReadStream(__dirname + "/read-files/localbtcPLN.csv").pipe(pgcfStream);            
+                }, function(err) {
+                    test.ifError(err);
+
+                    async.series([
+                        async.apply(client.query.bind(client),"SELECT exchange, currency, time, price, volume, cnt " + 
+                            "FROM " + testTable + " ORDER BY 3 ASC LIMIT 1"),
+                        async.apply(client.query.bind(client),"SELECT exchange, currency, time, price, volume, cnt " + 
+                            "FROM " + testTable + " ORDER BY 3 DESC LIMIT 1"),
+                        async.apply(client.query.bind(client),"SELECT COUNT(*) as \"count\" FROM " + testTable),
+                        async.apply(client.query.bind(client),"SELECT SUM(cnt) as \"count_lines\" FROM " + testTable),
+                        async.apply(client.query.bind(client),"DROP TABLE " + testTable)
+                    ], function(err, result) {
+                        test.ifError(err);
+                        done();
+                        test.equal(result[0].rows[0].time.toString(), (new Date("2013-06-24T16:56:22+00:00")).toString(), "Date on first line doesn't match expectations");
+                        test.equal(result[0].rows[0].price, "371.170000000000", "Price on first line doesn't match expectations");
+                        test.equal(result[0].rows[0].volume, "0.269400000000", "Volume on first line doesn't match expectations");
+                        test.equal(result[0].rows[0].cnt, "3", "Count on first line doesn't match expectations");
+                        test.equal(result[1].rows[0].time.toString(), (new Date("2014-03-18T08:42:20+00:00")).toString(), "Date on last line doesn't match expectations");
+                        test.equal(result[1].rows[0].price, "1828.360000000000", "Price on last line doesn't match expectations");
+                        test.equal(result[1].rows[0].volume, "1.367300000000", "Volume on last line doesn't match expectations");
+                        test.equal(result[1].rows[0].cnt, "1", "Count on last line doesn't match expectations");
+                        test.equal(result[2].rows[0].count, 478, "Count of total rows in tables doesn't match expectations.");
+                        test.equal(result[3].rows[0].count_lines, 494, "Count of total lines in file doesn't match expectations.");
+                        test.done();
+                        disconnect();
+                    });
+                }
+            );
         });
     });
 };

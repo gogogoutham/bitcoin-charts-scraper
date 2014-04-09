@@ -60,27 +60,29 @@ var scrapeTrades = function (options, callback) {
     }
 
     // Setup setup common parse and DB options
-    parseOptions = {
-        timeFormatter : parser.formatTradeTime,
-        rowPadding : parser.splitSymbol(symbol),
-        countInGroupField : 'cnt'
-    };
-    dbLoadOptions = {
-        "dbUrl" : dbUrl, 
-        "tableName" : tradeTable,
-        "insertFields" : ['exchange', 'currency', 'time', 'price', 'volume', 'cnt'],
-        "keyFields" : ['exchange', 'currency', 'time', 'price', 'volume'],
-        "sqlMode" : pgLoader.SQL_REPLACE
+    loadOptions = {
+        dbUrl : dbUrl,
+        symbol : symbol,
+        tableName : tradeTable,
+        fileFields : ['time', 'price', 'volume'],
+        symbolFields : ['exchange', 'currency'],
+        countField : ['cnt']
     };
 
     var tasks = [];
 
-    // Pipe to parse and database load, w/ an event handler on success
+    // Pipe to database load, w/ a notification on success
     tasks.push(function(cb) {
-        var dbsm = csvStream.pipe(parser.createTradeBatcher(batchSize))
-            .pipe(parser.createTradeFormatter(parseOptions))
-            .pipe(pgLoader.createStream(dbLoadOptions));
-        dbsm.on("finish", function() {
+        pgLoader.createTradeStream(loadOptions, function(err, pgLoadStream) {
+            if( err ) {
+                cb(err);
+            } else {
+                csvStream.pipe(pgLoadStream);
+            }
+        }, function(err) {
+            if( err ) {
+                cb(err);
+            }
             debug("Successfully saved the following trade information to the database: %s", JSON.stringify(options));
             cb(null, true);
         });
@@ -250,7 +252,8 @@ var scrape = function(callback) {
 //         async.apply(scrapeTrades, { source : "api", symbol : 'bitstampUSD', start : Math.floor((new Date()).getTime()/1000) - 86400 }),
 //         async.apply(scrapeTrades, { source : "manifest", link : "localbtcPLN.csv.gz"}),
 //         async.apply(scrapeTrades, { source : "manifest", link : "bcmBMAUD.csv.gz"}),
-//         async.apply(scrapeTrades, { source : "csvfile", symbol : "localbtcPLN", path : "test/read-files/localbtcPLN.csv"})
+//         async.apply(scrapeTrades, { source : "csvfile", symbol : "localbtcPLN", path : "test/read-files/localbtcPLN.csv"}),
+//         async.apply(scrapeTrades, { source : "manifest", link : "bitcurexPLN.csv.gz"})
 //     ], function(err, result) {
 //         if( err ) {
 //             console.log("Problem encountered in trade scraping tasks.");
