@@ -9,7 +9,7 @@ Installation
 - Clone repository, and install all pre-requisites within cloned directory as follows:
 
 ```
-npm install async cheerio debug pg request sql zlib
+npm install async cheerio debug pg request sql
 ```
 - Create the target tables to store the scraped data in PostgreSQL (see the sql/ directory). Modify table names as necessary.
 - Create a Postgres formatted password file containing database connection information. As of 9.1 the format is as follows:
